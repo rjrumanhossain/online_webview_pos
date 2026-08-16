@@ -3,27 +3,25 @@
 
     <uses-permission android:name="android.permission.INTERNET" />
 
-    <!-- Required for SUNMI V2s/V2s Plus printer service discovery. -->
     <queries>
         <package android:name="woyou.aidlservice.jiuiv5" />
     </queries>
 
     <application
         android:allowBackup="false"
-        android:label="Mathbor Sunmi Print"
-        android:supportsRtl="true"
-        android:usesCleartextTraffic="false"
-        android:theme="@style/AppTheme">
+        android:label="Mathbor POS"
+        android:usesCleartextTraffic="false">
 
         <activity
             android:name=".MainActivity"
             android:screenOrientation="portrait"
             android:exported="true">
+
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
-        </activity>
 
+        </activity>
     </application>
 </manifest>

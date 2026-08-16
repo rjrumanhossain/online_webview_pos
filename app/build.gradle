@@ -1,21 +1,30 @@
 plugins {
-    id 'com.android.application'
+    id "com.android.application"
 }
 
 android {
-    namespace 'xyz.robotispsoft.mathborprint'
+    namespace "xyz.robotispsoft.mathborsunmi"
     compileSdk 35
 
     defaultConfig {
-        applicationId 'xyz.robotispsoft.mathborprint'
+        applicationId "xyz.robotispsoft.mathborsunmi"
         minSdk 23
         targetSdk 35
         versionCode 1
-        versionName '1.0'
+        versionName "1.0"
     }
 }
 
+/*
+ * This project intentionally uses NO AppCompat/AndroidX dependency.
+ * That avoids the Kotlin stdlib/jdk7/jdk8 duplicate-class problem
+ * reported by the GitHub Actions build.
+ */
+configurations.configureEach {
+    exclude group: "org.jetbrains.kotlin", module: "kotlin-stdlib-jdk7"
+    exclude group: "org.jetbrains.kotlin", module: "kotlin-stdlib-jdk8"
+}
+
 dependencies {
-    implementation 'androidx.appcompat:appcompat:1.7.0'
-    implementation 'com.sunmi:printerlibrary:1.0.18'
+    implementation "com.sunmi:printerlibrary:1.0.24"
 }
