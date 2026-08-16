@@ -7,6 +7,8 @@ import android.os.Handler;
 import android.os.Looper;
 import android.webkit.JavascriptInterface;
 import android.webkit.WebChromeClient;
+import android.webkit.WebResourceRequest;
+import android.webkit.WebSettings;
 import android.webkit.WebView;
 import android.webkit.WebViewClient;
 import android.widget.Toast;
@@ -22,36 +24,23 @@ public class MainActivity extends Activity {
     private WebView webView;
     private SunmiPrinterService printerService;
 
-    private final Handler mainHandler =
-            new Handler(Looper.getMainLooper());
-
-    // =========================================================
-    // SUNMI PRINTER CONNECTION
-    // =========================================================
+    private final Handler handler = new Handler(Looper.getMainLooper());
 
     private final InnerPrinterCallback printerCallback =
             new InnerPrinterCallback() {
 
-                @Override
-                public void onConnected(SunmiPrinterService service) {
+        @Override
+        public void onConnected(SunmiPrinterService service) {
+            printerService = service;
+            toast("SUNMI Printer Connected");
+        }
 
-                    printerService = service;
-
-                    toast("SUNMI printer connected");
-                }
-
-                @Override
-                public void onDisconnected() {
-
-                    printerService = null;
-
-                    toast("SUNMI printer disconnected");
-                }
-            };
-
-    // =========================================================
-    // ACTIVITY CREATE
-    // =========================================================
+        @Override
+        public void onDisconnected() {
+            printerService = null;
+            toast("SUNMI Printer Disconnected");
+        }
+    };
 
     @SuppressLint({
             "SetJavaScriptEnabled",
@@ -61,160 +50,351 @@ public class MainActivity extends Activity {
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
 
-        // -----------------------------------------------------
-        // WEBVIEW
-        // -----------------------------------------------------
-
         webView = new WebView(this);
-
         setContentView(webView);
 
-        // -----------------------------------------------------
-        // WEBVIEW SETTINGS
-        // -----------------------------------------------------
+        WebSettings settings = webView.getSettings();
 
-        webView.getSettings().setJavaScriptEnabled(true);
+        settings.setJavaScriptEnabled(true);
+        settings.setDomStorageEnabled(true);
+        settings.setDatabaseEnabled(true);
+        settings.setAllowFileAccess(true);
+        settings.setAllowContentAccess(true);
+        settings.setJavaScriptCanOpenWindowsAutomatically(true);
+        settings.setSupportMultipleWindows(false);
 
-        webView.getSettings().setDomStorageEnabled(true);
+        webView.setWebChromeClient(new WebChromeClient());
 
-        webView.getSettings().setDatabaseEnabled(true);
+        webView.setWebViewClient(new WebViewClient() {
 
-        webView.getSettings().setAllowFileAccess(true);
+            @Override
+            public boolean shouldOverrideUrlLoading(
+                    WebView view,
+                    WebResourceRequest request
+            ) {
+                return false;
+            }
 
-        webView.getSettings().setAllowContentAccess(true);
+            @Override
+            public boolean shouldOverrideUrlLoading(
+                    WebView view,
+                    String url
+            ) {
+                return false;
+            }
 
-        // -----------------------------------------------------
-        // CHROME CLIENT
-        // -----------------------------------------------------
+            @Override
+            public void onPageFinished(
+                    WebView view,
+                    String url
+            ) {
+                super.onPageFinished(view, url);
 
-        webView.setWebChromeClient(
-                new WebChromeClient()
-        );
+                // Web page-কে জানিয়ে দিচ্ছি যে SUNMI WebView APK চলছে
+                String js =
+                        "javascript:(function(){" +
+                        "window.IS_SUNMI_APP=true;" +
+                        "console.log('SUNMI APP BRIDGE READY');" +
+                        "})();";
 
-        // -----------------------------------------------------
-        // JAVASCRIPT BRIDGE
-        // -----------------------------------------------------
+                view.evaluateJavascript(js, null);
+            }
+        });
 
+        // IMPORTANT:
+        // Website থেকে এই নামেই native Android call হবে
         SunmiBridge bridge = new SunmiBridge();
-
-        /*
-         * Website JavaScript:
-         *
-         * window.SunmiBridge.printReceipt("TEXT");
-         */
 
         webView.addJavascriptInterface(
                 bridge,
                 "SunmiBridge"
         );
 
-        /*
-         * Old compatibility:
-         *
-         * window.lee.funAndroid("TEXT");
-         */
-
+        // পুরনো code compatibility
         webView.addJavascriptInterface(
                 bridge,
                 "lee"
         );
 
-        // -----------------------------------------------------
-        // WEBVIEW CLIENT
-        // -----------------------------------------------------
-
-        webView.setWebViewClient(
-                new WebViewClient() {
-
-                    @Override
-                    public void onPageFinished(
-                            WebView view,
-                            String url
-                    ) {
-
-                        super.onPageFinished(view, url);
-
-                        /*
-                         * Check whether JavaScript can see
-                         * SunmiBridge.
-                         */
-
-                        view.evaluateJavascript(
-                                "(typeof window.SunmiBridge !== 'undefined')",
-                                value -> {
-
-                                    if ("true".equals(value)) {
-
-                                        toast(
-                                                "SUNMI WebView Bridge OK"
-                                        );
-
-                                    } else {
-
-                                        toast(
-                                                "SUNMI WebView Bridge NOT FOUND"
-                                        );
-                                    }
-                                }
-                        );
-                    }
-                }
-        );
-
-        // =====================================================
-        // CONNECT SUNMI PRINTER
-        // =====================================================
-
-        connectPrinter();
-
-        // =====================================================
-        // LOAD WEBSITE
-        // =====================================================
-
-        webView.loadUrl(
-                "https://mathbor.robotispsoft.xyz/"
-        );
-    }
-
-    // =========================================================
-    // CONNECT PRINTER
-    // =========================================================
-
-    private void connectPrinter() {
-
+        // SUNMI printer service bind
         try {
 
-            boolean bound =
-                    InnerPrinterManager
-                            .getInstance()
+            boolean result =
+                    InnerPrinterManager.getInstance()
                             .bindService(
                                     this,
                                     printerCallback
                             );
 
-            if (!bound) {
-
-                toast(
-                        "SUNMI printer service not available"
-                );
+            if (!result) {
+                toast("SUNMI Printer Service bind failed");
             }
 
         } catch (InnerPrinterException e) {
 
             toast(
-                    "Printer bind error: "
+                    "SUNMI Printer Service Error: "
                             + e.getMessage()
+            );
+        }
+
+        // Website
+        webView.loadUrl(
+                "https://mathbor.robotispsoft.xyz/"
+        );
+    }
+
+    // =====================================================
+    // JAVASCRIPT -> ANDROID BRIDGE
+    // =====================================================
+
+    public class SunmiBridge {
+
+        @JavascriptInterface
+        public String getStatus() {
+
+            if (printerService != null) {
+                return "connected";
+            }
+
+            return "disconnected";
+        }
+
+        @JavascriptInterface
+        public boolean isReady() {
+
+            return printerService != null;
+        }
+
+        @JavascriptInterface
+        public void initPrinter() {
+
+            if (printerService == null) {
+
+                toast(
+                        "SUNMI Printer Service connected নেই"
+                );
+
+                return;
+            }
+
+            try {
+
+                printerService.printerInit(
+                        new InnerResultCallback() {
+
+                            @Override
+                            public void onRunResult(
+                                    boolean success
+                            ) {
+                                toast(
+                                        success
+                                                ? "Printer Ready"
+                                                : "Printer Init Failed"
+                                );
+                            }
+
+                            @Override
+                            public void onReturnString(
+                                    String result
+                            ) {
+                            }
+
+                            @Override
+                            public void onRaiseException(
+                                    int code,
+                                    String msg
+                            ) {
+                                toast(
+                                        "Printer Error: "
+                                                + msg
+                                );
+                            }
+
+                            @Override
+                            public void onPrintResult(
+                                    int code,
+                                    String msg
+                            ) {
+                            }
+                        }
+                );
+
+            } catch (Exception e) {
+
+                toast(
+                        "Printer Init Error: "
+                                + e.getMessage()
+                );
+            }
+        }
+
+        @JavascriptInterface
+        public void printReceipt(
+                final String text
+        ) {
+
+            printTextInternal(
+                    text == null ? "" : text
+            );
+        }
+
+        @JavascriptInterface
+        public void printText(
+                final String text
+        ) {
+
+            printTextInternal(
+                    text == null ? "" : text
+            );
+        }
+
+        // পুরনো website code-এর জন্য
+        @JavascriptInterface
+        public void funAndroid(
+                final String text
+        ) {
+
+            printTextInternal(
+                    text == null ? "" : text
             );
         }
     }
 
-    // =========================================================
-    // TOAST
-    // =========================================================
+    // =====================================================
+    // ACTUAL PRINT
+    // =====================================================
 
-    private void toast(final String message) {
+    private void printTextInternal(
+            final String text
+    ) {
 
-        mainHandler.post(() ->
+        handler.post(() -> {
+
+            if (printerService == null) {
+
+                toast(
+                        "SUNMI Printer connected নেই"
+                );
+
+                return;
+            }
+
+            try {
+
+                printerService.printerInit(
+                        new InnerResultCallback() {
+
+                            @Override
+                            public void onRunResult(
+                                    boolean success
+                            ) {
+                            }
+
+                            @Override
+                            public void onReturnString(
+                                    String result
+                            ) {
+                            }
+
+                            @Override
+                            public void onRaiseException(
+                                    int code,
+                                    String msg
+                            ) {
+                                toast(
+                                        "Printer Error: "
+                                                + msg
+                                );
+                            }
+
+                            @Override
+                            public void onPrintResult(
+                                    int code,
+                                    String msg
+                            ) {
+                            }
+                        }
+                );
+
+                // Left align
+                printerService.setAlignment(
+                        0,
+                        null
+                );
+
+                // Print
+                printerService.printText(
+                        text + "\n",
+                        new InnerResultCallback() {
+
+                            @Override
+                            public void onRunResult(
+                                    boolean success
+                            ) {
+
+                                if (success) {
+
+                                    toast(
+                                            "Receipt Printed"
+                                    );
+
+                                } else {
+
+                                    toast(
+                                            "Print Failed"
+                                    );
+                                }
+                            }
+
+                            @Override
+                            public void onReturnString(
+                                    String result
+                            ) {
+                            }
+
+                            @Override
+                            public void onRaiseException(
+                                    int code,
+                                    String msg
+                            ) {
+
+                                toast(
+                                        "Print Error: "
+                                                + msg
+                                );
+                            }
+
+                            @Override
+                            public void onPrintResult(
+                                    int code,
+                                    String msg
+                            ) {
+                            }
+                        }
+                );
+
+                // Paper advance
+                printerService.lineWrap(
+                        4,
+                        null
+                );
+
+            } catch (Exception e) {
+
+                toast(
+                        "Print Exception: "
+                                + e.getMessage()
+                );
+            }
+        });
+    }
+
+    private void toast(
+            final String message
+    ) {
+
+        handler.post(() ->
                 Toast.makeText(
                         MainActivity.this,
                         message,
@@ -223,327 +403,9 @@ public class MainActivity extends Activity {
         );
     }
 
-    // =========================================================
-    // PRINT RECEIPT
-    // =========================================================
-
-    private void printReceipt(final String text) {
-
-        /*
-         * Printer service not connected
-         */
-
-        if (printerService == null) {
-
-            toast(
-                    "SUNMI printer not connected"
-            );
-
-            // Try connecting again
-            connectPrinter();
-
-            return;
-        }
-
-        mainHandler.post(() -> {
-
-            try {
-
-                // -------------------------------------------------
-                // PRINTER INITIALIZE
-                // -------------------------------------------------
-
-                printerService.printerInit(
-                        new InnerResultCallback() {
-
-                            @Override
-                            public void onRunResult(
-                                    boolean isSuccess
-                            ) {
-                                // No action
-                            }
-
-                            @Override
-                            public void onReturnString(
-                                    String result
-                            ) {
-                                // No action
-                            }
-
-                            @Override
-                            public void onRaiseException(
-                                    int code,
-                                    String msg
-                            ) {
-
-                                toast(
-                                        "Printer init error: "
-                                                + msg
-                                );
-                            }
-
-                            @Override
-                            public void onPrintResult(
-                                    int code,
-                                    String msg
-                            ) {
-                                // No action
-                            }
-                        }
-                );
-
-                // -------------------------------------------------
-                // ALIGN LEFT
-                // -------------------------------------------------
-
-                printerService.setAlignment(
-                        0,
-                        null
-                );
-
-                // -------------------------------------------------
-                // PRINT TEXT
-                // -------------------------------------------------
-
-                printerService.printText(
-                        (text == null ? "" : text)
-                                + "\n",
-                        new InnerResultCallback() {
-
-                            @Override
-                            public void onRunResult(
-                                    boolean isSuccess
-                            ) {
-
-                                if (isSuccess) {
-
-                                    toast(
-                                            "Receipt sent to printer"
-                                    );
-
-                                } else {
-
-                                    toast(
-                                            "Print failed"
-                                    );
-                                }
-                            }
-
-                            @Override
-                            public void onReturnString(
-                                    String result
-                            ) {
-                                // No action
-                            }
-
-                            @Override
-                            public void onRaiseException(
-                                    int code,
-                                    String msg
-                            ) {
-
-                                toast(
-                                        "Print error: "
-                                                + msg
-                                );
-                            }
-
-                            @Override
-                            public void onPrintResult(
-                                    int code,
-                                    String msg
-                            ) {
-                                // No action
-                            }
-                        }
-                );
-
-                // -------------------------------------------------
-                // FEED PAPER
-                // -------------------------------------------------
-
-                printerService.lineWrap(
-                        3,
-                        null
-                );
-
-            } catch (Exception e) {
-
-                toast(
-                        "Print error: "
-                                + e.getMessage()
-                );
-            }
-        });
-    }
-
-    // =========================================================
-    // JAVASCRIPT BRIDGE
-    // =========================================================
-
-    public class SunmiBridge {
-
-        // -----------------------------------------------------
-        // MAIN PRINT METHOD
-        // -----------------------------------------------------
-
-        @JavascriptInterface
-        public void printReceipt(String text) {
-
-            /*
-             * IMPORTANT:
-             *
-             * MainActivity.this.printReceipt()
-             *
-             * ব্যবহার করতে হবে।
-             *
-             * না হলে bridge-এর নিজের method আবার নিজেকেই
-             * call করতে পারে।
-             */
-
-            MainActivity.this.printReceipt(
-                    text == null ? "" : text
-            );
-        }
-
-        // -----------------------------------------------------
-        // printText COMPATIBILITY
-        // -----------------------------------------------------
-
-        @JavascriptInterface
-        public void printText(String text) {
-
-            MainActivity.this.printReceipt(
-                    text == null ? "" : text
-            );
-        }
-
-        // -----------------------------------------------------
-        // OLD lee.funAndroid COMPATIBILITY
-        // -----------------------------------------------------
-
-        @JavascriptInterface
-        public void funAndroid(String text) {
-
-            MainActivity.this.printReceipt(
-                    text == null ? "" : text
-            );
-        }
-
-        // -----------------------------------------------------
-        // GET PRINTER STATUS
-        // -----------------------------------------------------
-
-        @JavascriptInterface
-        public String getStatus() {
-
-            if (printerService == null) {
-
-                return "disconnected";
-
-            } else {
-
-                return "connected";
-            }
-        }
-
-        // -----------------------------------------------------
-        // CHECK CONNECTION
-        // -----------------------------------------------------
-
-        @JavascriptInterface
-        public boolean isConnected() {
-
-            return printerService != null;
-        }
-
-        // -----------------------------------------------------
-        // INITIALIZE PRINTER
-        // -----------------------------------------------------
-
-        @JavascriptInterface
-        public void initPrinter() {
-
-            if (printerService == null) {
-
-                toast(
-                        "SUNMI printer not connected"
-                );
-
-                connectPrinter();
-
-                return;
-            }
-
-            mainHandler.post(() -> {
-
-                try {
-
-                    printerService.printerInit(
-                            new InnerResultCallback() {
-
-                                @Override
-                                public void onRunResult(
-                                        boolean isSuccess
-                                ) {
-
-                                    if (isSuccess) {
-
-                                        toast(
-                                                "Printer ready"
-                                        );
-
-                                    } else {
-
-                                        toast(
-                                                "Printer init failed"
-                                        );
-                                    }
-                                }
-
-                                @Override
-                                public void onReturnString(
-                                        String result
-                                ) {
-                                    // No action
-                                }
-
-                                @Override
-                                public void onRaiseException(
-                                        int code,
-                                        String msg
-                                ) {
-
-                                    toast(
-                                            "Printer error: "
-                                                    + msg
-                                    );
-                                }
-
-                                @Override
-                                public void onPrintResult(
-                                        int code,
-                                        String msg
-                                ) {
-                                    // No action
-                                }
-                            }
-                    );
-
-                } catch (Exception e) {
-
-                    toast(
-                            "Printer init error: "
-                                    + e.getMessage()
-                    );
-                }
-            });
-        }
-    }
-
-    // =========================================================
+    // =====================================================
     // BACK BUTTON
-    // =========================================================
+    // =====================================================
 
     @Override
     public void onBackPressed() {
@@ -561,17 +423,16 @@ public class MainActivity extends Activity {
         }
     }
 
-    // =========================================================
+    // =====================================================
     // DESTROY
-    // =========================================================
+    // =====================================================
 
     @Override
     protected void onDestroy() {
 
         try {
 
-            InnerPrinterManager
-                    .getInstance()
+            InnerPrinterManager.getInstance()
                     .unBindService(
                             this,
                             printerCallback
@@ -589,10 +450,6 @@ public class MainActivity extends Activity {
             webView.removeJavascriptInterface(
                     "lee"
             );
-
-            webView.stopLoading();
-
-            webView.loadUrl("about:blank");
 
             webView.destroy();
 
